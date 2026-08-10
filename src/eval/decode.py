@@ -57,7 +57,19 @@ class LocalWhisperTranscriber:
         if adapter_path:
             from peft import PeftModel
 
-            model = PeftModel.from_pretrained(model, adapter_path)
+            adapter_dir = Path(adapter_path).expanduser().resolve()
+            config_file = adapter_dir / "adapter_config.json"
+            if not config_file.is_file():
+                raise FileNotFoundError(
+                    f"LoRA adapter not found at {adapter_dir}\n"
+                    f"Expected file: {config_file}\n"
+                    "Re-run the training cell, or restore the checkpoint from Google Drive "
+                    "(Colab wipes /content when the runtime disconnects)."
+                )
+            # Resolve to an absolute path so PEFT does not treat it as a Hub repo id.
+            model = PeftModel.from_pretrained(
+                model, str(adapter_dir), local_files_only=True
+            )
             # Fold the LoRA weights into the base model so decoding runs at
             # normal speed, with no adapter overhead.
             model = model.merge_and_unload()

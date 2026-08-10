@@ -1,0 +1,44 @@
+name: LLM Prompt Regression CI
+
+# Re-evaluates the hotword-curation prompts against the gold set whenever a
+# prompt changes, and blocks the merge when the candidate prompt's F1 drops
+# more than the configured threshold below the baseline.
+
+on:
+  pull_request:
+    paths:
+      - "src/lexicon/prompts.py"
+      - "src/llm_eval_ci/**"
+      - "data/lexicon/gold_labels.json"
+  workflow_dispatch:
+
+jobs:
+  prompt-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Only the lightweight deps needed by the eval job (no torch/ray).
+      - name: Install dependencies
+        run: pip install "openai>=1.60" "mlflow>=2.20" "pandas>=2.2" "pydantic>=2.9" "pydantic-settings>=2.6"
+
+      - name: Run prompt A/B evaluation (v1 vs v2)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python -m src.llm_eval_ci.ab_runner
+
+      - name: Regression gate (fail on F1 drop > threshold)
+        run: python -m src.llm_eval_ci.gate --report data/eval/ab_report.json
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prompt-eval-reports
+          path: |
+            data/eval/ab_report.json
+            data/eval/mlflow_summary.json

@@ -1,0 +1,57 @@
+[project]
+name = "singlish-asr-finetune"
+version = "0.1.0"
+description = "Singlish ASR fine-tuning & evaluation pipeline - Whisper LoRA adaptation with Ray preprocessing, hotword mining, and prompt-regression CI"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.4.0",
+    "transformers>=4.48.0",
+    "peft>=0.14.0",
+    "accelerate>=1.2.0",
+    "datasets>=3.2.0",
+    "soundfile>=0.12.1",
+    "librosa>=0.10.2",
+    "silero-vad>=5.1.0",
+    "jiwer>=3.0.5",
+    # Ray ships no Windows wheels for recent versions; on Windows the
+    # preprocessing falls back to a local process pool (same task code).
+    "ray>=2.40.0; sys_platform != 'win32'",
+    "openai>=1.60.0",
+    "mlflow>=2.20.0",
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "tqdm>=4.66.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "ruff>=0.8.0",
+]
+# Lightweight subset used by the GitHub Actions prompt-regression job
+# (avoids pulling torch/ray into CI).
+ci = [
+    "openai>=1.60.0",
+    "mlflow>=2.20.0",
+    "pandas>=2.2.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+]
+
+[build-system]
+requires = ["setuptools>=75.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

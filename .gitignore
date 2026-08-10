@@ -1,0 +1,47 @@
+# Secrets
+.env
+
+# Environments / tooling
+.venv/
+venv/
+.cursor/
+archive/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Data artifacts (rebuild via scripts/run_full_pipeline.ps1)
+data/raw/
+data/processed/
+data/hyps/
+
+# Experiment tracking (summaries are exported to data/eval/)
+mlruns/
+mlflow.db
+
+# Model artifacts (train on Colab, keep adapters out of git)
+checkpoints/
+*.safetensors
+*.bin
+*.pt
+
+# Audio safety net (manifests reference audio, git never stores it)
+*.wav
+*.flac
+*.mp3
+
+# Caches
+.cache/
+.ipynb_checkpoints/
+
+# Misc
+*.log
+.DS_Store
+
+# Others
+README.md
+README_copy.md
+notebooks/
+singlish_asr_finetune.egg-info/

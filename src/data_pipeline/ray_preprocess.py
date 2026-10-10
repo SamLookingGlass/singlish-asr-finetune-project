@@ -31,7 +31,7 @@ import json
 import os
 from pathlib import Path
 
-from src.config import PROCESSED_DIR, RAW_DIR, settings
+from src.config import PROCESSED_DIR, RAW_DIR, as_project_path, resolve_path, settings
 from src.eval.metrics import normalize_text
 
 PROCESSED_MANIFEST = PROCESSED_DIR / "processed_manifest.jsonl"
@@ -60,7 +60,7 @@ def _record_from_wav(record: dict, wav_path: Path) -> dict:
         data = data.mean(axis=1)
     return {
         "id": record["id"],
-        "audio_path": str(wav_path),
+        "audio_path": as_project_path(wav_path),
         "transcript": record["transcript"],
         "duration_s": round(len(data) / sr, 3),
         "sample_rate": sr,
@@ -88,7 +88,7 @@ def process_clip(record: dict, out_dir: str, target_sr: int, vad_pad_s: float = 
         import torch
         from silero_vad import get_speech_timestamps
 
-        data, sr = sf.read(record["audio_path"], dtype="float32")
+        data, sr = sf.read(resolve_path(record["audio_path"]), dtype="float32")
         if data.ndim > 1:
             data = data.mean(axis=1)  # stereo -> mono
         if sr != target_sr:
@@ -113,7 +113,7 @@ def process_clip(record: dict, out_dir: str, target_sr: int, vad_pad_s: float = 
 
         return {
             "id": record["id"],
-            "audio_path": str(out_path),
+            "audio_path": as_project_path(out_path),
             "transcript": record["transcript"],
             "duration_s": round(len(trimmed) / sr, 3),
             "sample_rate": sr,

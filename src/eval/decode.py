@@ -19,6 +19,7 @@ import argparse
 import json
 from pathlib import Path
 
+from src.audio import load_mono
 from src.config import settings
 
 MAX_PROMPT_TERMS = 60  # Whisper's prompt window is 224 tokens; stay well under
@@ -45,12 +46,19 @@ class LocalWhisperTranscriber:
 
         self.model_id = model_id or settings.whisper_model
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.dtype = torch.float16 if self.device == "cuda" else torch.float32
+        if self.device == "cuda" and torch.cuda.is_bf16_supported():
+            self.dtype = torch.bfloat16
+        elif self.device == "cuda":
+            self.dtype = torch.float16
+        else:
+            self.dtype = torch.float32
         self.batch_size = batch_size
 
         self.processor = WhisperProcessor.from_pretrained(
             self.model_id, language="english", task="transcribe"
         )
+        # Whisper is BPE. The WordPiece cleanup step strips spaces and warns.
+        self.processor.tokenizer.clean_up_tokenization_spaces = False
         model = WhisperForConditionalGeneration.from_pretrained(
             self.model_id, torch_dtype=self.dtype, low_cpu_mem_usage=True
         )
@@ -63,8 +71,7 @@ class LocalWhisperTranscriber:
                 raise FileNotFoundError(
                     f"LoRA adapter not found at {adapter_dir}\n"
                     f"Expected file: {config_file}\n"
-                    "Re-run the training cell, or restore the checkpoint from Google Drive "
-                    "(Colab wipes /content when the runtime disconnects)."
+                    "Re-run training. The adapter is the folder that contains adapter_config.json."
                 )
             # Resolve to an absolute path so PEFT does not treat it as a Hub repo id.
             model = PeftModel.from_pretrained(
@@ -74,6 +81,14 @@ class LocalWhisperTranscriber:
             # normal speed, with no adapter overhead.
             model = model.merge_and_unload()
         self.model = model.to(self.device).eval()
+        # Set language on the config. Passing language= into generate() as well
+        # makes current transformers also send suppress_tokens, and it warns
+        # that the two disagree.
+        gen_cfg = self.model.generation_config
+        gen_cfg.language = "english"
+        gen_cfg.task = "transcribe"
+        gen_cfg.max_new_tokens = 200
+        gen_cfg.max_length = None
 
         self.prompt_ids = None
         if hotwords:
@@ -101,7 +116,6 @@ class LocalWhisperTranscriber:
         return texts
 
     def transcribe(self, audio_paths: list[str]) -> list[str]:
-        import soundfile as sf
         import torch
         from tqdm import tqdm
 
@@ -110,23 +124,18 @@ class LocalWhisperTranscriber:
             range(0, len(audio_paths), self.batch_size), desc="decoding", unit="batch"
         ):
             batch_paths = audio_paths[start : start + self.batch_size]
-            audios = []
-            for path in batch_paths:
-                audio, _sr = sf.read(path, dtype="float32")
-                if audio.ndim > 1:
-                    audio = audio.mean(axis=1)
-                audios.append(audio)
+            audios = [load_mono(path) for path in batch_paths]
 
             inputs = self.processor.feature_extractor(
-                audios, sampling_rate=settings.sample_rate, return_tensors="pt"
+                audios,
+                sampling_rate=settings.sample_rate,
+                return_tensors="pt",
+                return_attention_mask=True,
             )
             input_features = inputs.input_features.to(self.device, dtype=self.dtype)
+            attention_mask = inputs.attention_mask.to(self.device)
 
-            generate_kwargs: dict = {
-                "language": "english",
-                "task": "transcribe",
-                "max_new_tokens": 200,
-            }
+            generate_kwargs: dict = {"attention_mask": attention_mask}
             if self.prompt_ids is not None:
                 generate_kwargs["prompt_ids"] = self.prompt_ids
 

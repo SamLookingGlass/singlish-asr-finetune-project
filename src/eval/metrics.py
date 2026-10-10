@@ -82,3 +82,132 @@ def term_recall(
         "n_hits": total_hit,
         "per_term": {t: c for t, c in per_term.items() if c["ref"] > 0},
     }
+
+
+def bootstrap_wer_ci(
+    references: list[str],
+    hypotheses: list[str],
+    n_bootstrap: int = 1000,
+    alpha: float = 0.05,
+    seed: int = 42,
+) -> tuple[float, float]:
+    """Calculate non-parametric bootstrap (lower, upper) confidence interval for WER."""
+    import jiwer
+    import numpy as np
+
+    if not references:
+        return 0.0, 0.0
+    if len(references) == 1:
+        score = compute_wer(references, hypotheses)
+        return score, score
+
+    edits: list[int] = []
+    ref_lens: list[int] = []
+    for r, h in zip(references, hypotheses):
+        r_norm = normalize_text(r)
+        h_norm = normalize_text(h)
+        n_ref = len(r_norm.split())
+        ref_lens.append(n_ref)
+        if n_ref == 0:
+            edits.append(len(h_norm.split()))
+        else:
+            out = jiwer.process_words(r_norm, h_norm)
+            edits.append(out.substitutions + out.deletions + out.insertions)
+
+    edits_arr = np.array(edits, dtype=np.int64)
+    lens_arr = np.array(ref_lens, dtype=np.int64)
+
+    rng = np.random.default_rng(seed)
+    n = len(references)
+    idx = rng.integers(0, n, size=(n_bootstrap, n))
+
+    sample_edits = edits_arr[idx].sum(axis=1)
+    sample_lens = lens_arr[idx].sum(axis=1)
+    valid = sample_lens > 0
+    if not np.any(valid):
+        return 0.0, 0.0
+
+    sample_wers = sample_edits[valid] / sample_lens[valid]
+    lower = float(np.percentile(sample_wers, 100 * (alpha / 2)))
+    upper = float(np.percentile(sample_wers, 100 * (1 - alpha / 2)))
+    return round(lower, 4), round(upper, 4)
+
+
+def bootstrap_cer_ci(
+    references: list[str],
+    hypotheses: list[str],
+    n_bootstrap: int = 1000,
+    alpha: float = 0.05,
+    seed: int = 42,
+) -> tuple[float, float]:
+    """Calculate non-parametric bootstrap (lower, upper) confidence interval for CER."""
+    import jiwer
+    import numpy as np
+
+    if not references:
+        return 0.0, 0.0
+    if len(references) == 1:
+        score = compute_cer(references, hypotheses)
+        return score, score
+
+    edits: list[int] = []
+    ref_lens: list[int] = []
+    for r, h in zip(references, hypotheses):
+        r_norm = normalize_text(r)
+        h_norm = normalize_text(h)
+        n_ref = len(r_norm)
+        ref_lens.append(n_ref)
+        if n_ref == 0:
+            edits.append(len(h_norm))
+        else:
+            out = jiwer.process_characters(r_norm, h_norm)
+            edits.append(out.substitutions + out.deletions + out.insertions)
+
+    edits_arr = np.array(edits, dtype=np.int64)
+    lens_arr = np.array(ref_lens, dtype=np.int64)
+
+    rng = np.random.default_rng(seed)
+    n = len(references)
+    idx = rng.integers(0, n, size=(n_bootstrap, n))
+
+    sample_edits = edits_arr[idx].sum(axis=1)
+    sample_lens = lens_arr[idx].sum(axis=1)
+    valid = sample_lens > 0
+    if not np.any(valid):
+        return 0.0, 0.0
+
+    sample_cers = sample_edits[valid] / sample_lens[valid]
+    lower = float(np.percentile(sample_cers, 100 * (alpha / 2)))
+    upper = float(np.percentile(sample_cers, 100 * (1 - alpha / 2)))
+    return round(lower, 4), round(upper, 4)
+
+
+def stratify_by_duration(
+    records: list[dict],
+    references: list[str],
+    hypotheses: list[str],
+    bins: tuple[tuple[str, float, float], ...] = (
+        ("short (<10s)", 0.0, 10.0),
+        ("medium (10-20s)", 10.0, 20.0),
+        ("long (>20s)", 20.0, float("inf")),
+    ),
+) -> dict[str, dict]:
+    """Calculate clip count, WER, and CER grouped by clip duration."""
+    stratified: dict[str, dict] = {}
+    for label, min_dur, max_dur in bins:
+        bin_refs: list[str] = []
+        bin_hyps: list[str] = []
+        for rec, ref, hyp in zip(records, references, hypotheses):
+            dur = float(rec.get("duration_s", 0.0))
+            if min_dur <= dur < max_dur:
+                bin_refs.append(ref)
+                bin_hyps.append(hyp)
+        if bin_refs:
+            stratified[label] = {
+                "n_clips": len(bin_refs),
+                "wer": round(compute_wer(bin_refs, bin_hyps), 4),
+                "cer": round(compute_cer(bin_refs, bin_hyps), 4),
+            }
+        else:
+            stratified[label] = {"n_clips": 0, "wer": None, "cer": None}
+    return stratified

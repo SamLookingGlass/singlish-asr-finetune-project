@@ -57,3 +57,45 @@ def test_term_recall_no_occurrences_returns_none():
     result = term_recall(["hello world"], ["hello world"], ["shiok"])
     assert result["recall"] is None
     assert result["n_ref_occurrences"] == 0
+
+
+def test_bootstrap_wer_and_cer_ci():
+    from src.eval.metrics import bootstrap_cer_ci, bootstrap_wer_ci
+
+    # Perfect match -> CI is exactly (0.0, 0.0)
+    low, high = bootstrap_wer_ci(["hello world"], ["hello world"], n_bootstrap=50)
+    assert low == 0.0
+    assert high == 0.0
+
+    low_c, high_c = bootstrap_cer_ci(["hello"], ["hello"], n_bootstrap=50)
+    assert low_c == 0.0
+    assert high_c == 0.0
+
+    # Non-perfect match
+    refs = ["the quick brown fox", "jumped over the lazy dog", "another test sentence"]
+    hyps = ["the quick brown cat", "jumped the lazy dog", "another test sentence"]
+    low_w, high_w = bootstrap_wer_ci(refs, hyps, n_bootstrap=100)
+    assert 0.0 < low_w <= high_w <= 1.0
+
+
+def test_stratify_by_duration():
+    from src.eval.metrics import stratify_by_duration
+
+    records = [
+        {"duration_s": 5.0},
+        {"duration_s": 15.0},
+        {"duration_s": 25.0},
+    ]
+    refs = ["short clip", "medium length clip", "very long clip audio"]
+    hyps = ["short clip", "medium length", "very long clip audio"]
+
+    strat = stratify_by_duration(records, refs, hyps)
+    assert "short (<10s)" in strat
+    assert strat["short (<10s)"]["n_clips"] == 1
+    assert strat["short (<10s)"]["wer"] == 0.0
+
+    assert strat["medium (10-20s)"]["n_clips"] == 1
+    assert strat["medium (10-20s)"]["wer"] > 0.0
+
+    assert strat["long (>20s)"]["n_clips"] == 1
+    assert strat["long (>20s)"]["wer"] == 0.0

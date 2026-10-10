@@ -20,6 +20,7 @@ import hashlib
 import json
 
 from src.config import MANIFEST_DIR, PROCESSED_DIR
+from src.eval.figures import write_corpus_figure
 
 SPLITS = ("train", "val", "test")
 
@@ -72,6 +73,8 @@ def build(train_pct: int = 80, val_pct: int = 10) -> dict:
     for split in (*SPLITS, "total"):
         s = stats[split]
         print(f"{split:<8}{s['clips']:>8}{s['hours']:>10.2f}{s['avg_clip_s']:>8.2f}")
+    figure = write_corpus_figure(stats)
+    print(f"Wrote {figure}")
     return stats
 
 

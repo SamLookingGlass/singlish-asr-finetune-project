@@ -25,7 +25,7 @@ from pathlib import Path
 import soundfile as sf
 from tqdm import tqdm
 
-from src.config import RAW_DIR, settings
+from src.config import RAW_DIR, as_project_path, settings
 
 DATASET_ID = "mjwong/SASRBench-v1"
 RAW_MANIFEST = RAW_DIR / "raw_manifest.jsonl"
@@ -60,7 +60,7 @@ def download(limit: int | None = None) -> Path:
         records.append(
             {
                 "id": clip_id,
-                "audio_path": str(out_path),
+                "audio_path": as_project_path(out_path),
                 "transcript": row["transcript"],
                 "duration_s": round(len(data) / sr, 3),
                 "sample_rate": sr,

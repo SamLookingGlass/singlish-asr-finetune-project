@@ -24,7 +24,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from src.config import EVAL_DIR, LEXICON_DIR, MANIFEST_DIR, settings
-from src.eval.metrics import compute_cer, compute_wer, term_recall
+from src.eval.figures import write_wer_figure
+from src.eval.metrics import (
+    bootstrap_cer_ci,
+    bootstrap_wer_ci,
+    compute_cer,
+    compute_wer,
+    stratify_by_duration,
+    term_recall,
+)
 from src.lexicon.mine_hotwords import SEED_TERMS
 
 VARIANTS = ("base", "finetuned", "finetuned_biased", "openai")
@@ -79,8 +87,21 @@ def run_variant(args: argparse.Namespace) -> Path:
     references = [r["transcript"] for r in records]
     hypotheses = get_hypotheses(records, args.variant, args)
 
+    wer = round(compute_wer(references, hypotheses), 4)
+    cer = round(compute_cer(references, hypotheses), 4)
+    wer_ci = bootstrap_wer_ci(references, hypotheses)
+    cer_ci = bootstrap_cer_ci(references, hypotheses)
+    stratified = stratify_by_duration(records, references, hypotheses)
+
+    # Always measure the standard Singlish seed terms
+    seed_recall = term_recall(references, hypotheses, sorted(SEED_TERMS))
+
     lexicon_terms, lexicon_source = load_lexicon_terms()
-    recall = term_recall(references, hypotheses, lexicon_terms)
+    has_full_lexicon = lexicon_source != "seed_terms (run mining + curation for the full lexicon)"
+    if has_full_lexicon:
+        full_recall = term_recall(references, hypotheses, lexicon_terms)
+    else:
+        full_recall = None
 
     report = {
         "variant": args.variant,
@@ -89,30 +110,42 @@ def run_variant(args: argparse.Namespace) -> Path:
         else settings.whisper_model,
         "adapter_path": args.adapter_path if args.variant.startswith("finetuned") else None,
         "n_clips": len(records),
-        "wer": round(compute_wer(references, hypotheses), 4),
-        "cer": round(compute_cer(references, hypotheses), 4),
-        "term_recall": round(recall["recall"], 4) if recall["recall"] is not None else None,
-        "term_occurrences": recall["n_ref_occurrences"],
-        "term_hits": recall["n_hits"],
-        "lexicon_source": lexicon_source,
-        "per_term": recall["per_term"],
+        "wer": wer,
+        "wer_ci_95": wer_ci,
+        "cer": cer,
+        "cer_ci_95": cer_ci,
+        "term_recall": round(seed_recall["recall"], 4) if seed_recall["recall"] is not None else None,
+        "term_occurrences": seed_recall["n_ref_occurrences"],
+        "term_hits": seed_recall["n_hits"],
+        "lexicon_source": "seed_terms",
+        "per_term": seed_recall["per_term"],
+        "stratification_by_duration": stratified,
         "created_at": datetime.now(UTC).isoformat(),
     }
+
+    if full_recall is not None:
+        report["full_lexicon_term_recall"] = (
+            round(full_recall["recall"], 4) if full_recall["recall"] is not None else None
+        )
+        report["full_lexicon_source"] = lexicon_source
+        report["full_lexicon_occurrences"] = full_recall["n_ref_occurrences"]
+        report["full_lexicon_hits"] = full_recall["n_hits"]
 
     EVAL_DIR.mkdir(parents=True, exist_ok=True)
     out_path = EVAL_DIR / f"report_{args.variant}.json"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
 
+    ci_info = f" (95% CI: [{wer_ci[0]:.2%}, {wer_ci[1]:.2%}])"
     print(
-        f"{args.variant}: WER {report['wer']:.2%}  CER {report['cer']:.2%}  "
+        f"{args.variant}: WER {report['wer']:.2%}{ci_info}  CER {report['cer']:.2%}  "
         f"term recall {report['term_recall'] if report['term_recall'] is not None else 'n/a'}"
     )
     print(f"Wrote {out_path}")
     return out_path
 
 
-def compare() -> None:
+def compare() -> str:
     """Collect all report files into one markdown comparison table."""
     rows = []
     for variant in VARIANTS:
@@ -124,25 +157,38 @@ def compare() -> None:
     if not rows:
         raise SystemExit("no reports found - run --variant evals first")
 
-    header = "| Variant | Model | Clips | WER | CER | Term recall |"
+    has_ci = any("wer_ci_95" in r for r in rows)
+    if has_ci:
+        header = "| Variant | Model | Clips | WER (95% CI) | CER (95% CI) | Term recall |"
+    else:
+        header = "| Variant | Model | Clips | WER | CER | Term recall |"
     sep = "| --- | --- | --- | --- | --- | --- |"
     lines = [header, sep]
     for r in rows:
         tr = f"{r['term_recall']:.2%}" if r["term_recall"] is not None else "n/a"
-        model = r["model"].split("/")[-1] + (" + LoRA" if r["adapter_path"] else "")
+        model = r["model"].split("/")[-1] + (" + LoRA" if r.get("adapter_path") else "")
         if r["variant"] == "finetuned_biased":
             model += " + hotwords"
+        if has_ci and "wer_ci_95" in r and "cer_ci_95" in r:
+            wer_display = f"{r['wer']:.2%} [{r['wer_ci_95'][0]:.1%}, {r['wer_ci_95'][1]:.1%}]"
+            cer_display = f"{r['cer']:.2%} [{r['cer_ci_95'][0]:.1%}, {r['cer_ci_95'][1]:.1%}]"
+        else:
+            wer_display = f"{r['wer']:.2%}"
+            cer_display = f"{r['cer']:.2%}"
         lines.append(
             f"| {r['variant']} | {model} | {r['n_clips']} "
-            f"| {r['wer']:.2%} | {r['cer']:.2%} | {tr} |"
+            f"| {wer_display} | {cer_display} | {tr} |"
         )
 
     table = "\n".join(lines)
     out_path = EVAL_DIR / "comparison.md"
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(table + "\n")
+    figure = write_wer_figure(rows)
     print(table)
     print(f"\nWrote {out_path}")
+    print(f"Wrote {figure}")
+    return table
 
 
 def main() -> None:

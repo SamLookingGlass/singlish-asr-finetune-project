@@ -1,22 +1,22 @@
 {
   "train": {
-    "clips": 1857,
-    "hours": 7.389,
-    "avg_clip_s": 14.32
+    "clips": 2946,
+    "hours": 11.966,
+    "avg_clip_s": 14.62
   },
   "val": {
-    "clips": 254,
-    "hours": 1.004,
-    "avg_clip_s": 14.23
+    "clips": 411,
+    "hours": 1.656,
+    "avg_clip_s": 14.51
   },
   "test": {
-    "clips": 257,
-    "hours": 0.986,
-    "avg_clip_s": 13.81
+    "clips": 390,
+    "hours": 1.542,
+    "avg_clip_s": 14.24
   },
   "total": {
-    "clips": 2368,
-    "hours": 9.378,
-    "avg_clip_s": 14.26
+    "clips": 3747,
+    "hours": 15.165,
+    "avg_clip_s": 14.57
   }
 }

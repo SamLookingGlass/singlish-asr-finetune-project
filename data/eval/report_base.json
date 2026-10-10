@@ -1,0 +1,76 @@
+{
+  "variant": "base",
+  "model": "openai/whisper-large-v3-turbo",
+  "adapter_path": null,
+  "n_clips": 390,
+  "wer": 0.2924,
+  "wer_ci_95": [
+    0.27,
+    0.3169
+  ],
+  "cer": 0.2069,
+  "cer_ci_95": [
+    0.1894,
+    0.2253
+  ],
+  "term_recall": 0.0706,
+  "term_occurrences": 85,
+  "term_hits": 6,
+  "lexicon_source": "seed_terms",
+  "per_term": {
+    "jialat": {
+      "ref": 1,
+      "hit": 0
+    },
+    "kaypoh": {
+      "ref": 2,
+      "hit": 0
+    },
+    "lah": {
+      "ref": 67,
+      "hit": 5
+    },
+    "leh": {
+      "ref": 3,
+      "hit": 0
+    },
+    "lor": {
+      "ref": 7,
+      "hit": 0
+    },
+    "meh": {
+      "ref": 1,
+      "hit": 0
+    },
+    "sia": {
+      "ref": 1,
+      "hit": 0
+    },
+    "sian": {
+      "ref": 1,
+      "hit": 0
+    },
+    "walao": {
+      "ref": 2,
+      "hit": 1
+    }
+  },
+  "stratification_by_duration": {
+    "short (<10s)": {
+      "n_clips": 43,
+      "wer": 0.3753,
+      "cer": 0.2544
+    },
+    "medium (10-20s)": {
+      "n_clips": 347,
+      "wer": 0.2862,
+      "cer": 0.2034
+    },
+    "long (>20s)": {
+      "n_clips": 0,
+      "wer": null,
+      "cer": null
+    }
+  },
+  "created_at": "2026-10-10T08:57:11.532811+00:00"
+}

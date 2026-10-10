@@ -1,0 +1,76 @@
+{
+  "variant": "finetuned",
+  "model": "openai/whisper-large-v3-turbo",
+  "adapter_path": "checkpoints/whisper-turbo-singlish-lora",
+  "n_clips": 390,
+  "wer": 0.1808,
+  "wer_ci_95": [
+    0.1694,
+    0.1925
+  ],
+  "cer": 0.1102,
+  "cer_ci_95": [
+    0.099,
+    0.1256
+  ],
+  "term_recall": 0.0353,
+  "term_occurrences": 85,
+  "term_hits": 3,
+  "lexicon_source": "seed_terms",
+  "per_term": {
+    "jialat": {
+      "ref": 1,
+      "hit": 0
+    },
+    "kaypoh": {
+      "ref": 2,
+      "hit": 0
+    },
+    "lah": {
+      "ref": 67,
+      "hit": 0
+    },
+    "leh": {
+      "ref": 3,
+      "hit": 1
+    },
+    "lor": {
+      "ref": 7,
+      "hit": 0
+    },
+    "meh": {
+      "ref": 1,
+      "hit": 0
+    },
+    "sia": {
+      "ref": 1,
+      "hit": 0
+    },
+    "sian": {
+      "ref": 1,
+      "hit": 0
+    },
+    "walao": {
+      "ref": 2,
+      "hit": 2
+    }
+  },
+  "stratification_by_duration": {
+    "short (<10s)": {
+      "n_clips": 43,
+      "wer": 0.1755,
+      "cer": 0.1065
+    },
+    "medium (10-20s)": {
+      "n_clips": 347,
+      "wer": 0.1812,
+      "cer": 0.1104
+    },
+    "long (>20s)": {
+      "n_clips": 0,
+      "wer": null,
+      "cer": null
+    }
+  },
+  "created_at": "2026-10-10T08:57:37.291984+00:00"
+}

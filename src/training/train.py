@@ -1,8 +1,12 @@
 """Fine-tune whisper-large-v3-turbo on the Singlish manifests using LoRA.
 
-LoRA trains a small set of extra weights instead of the whole model, which
-is why this fits on a free Colab T4 GPU. The Colab notebook
-(notebooks/finetune_whisper_lora_colab.ipynb) just calls this script.
+LoRA trains a small set of extra weights instead of the whole model.
+The local notebook (notebooks/finetune_whisper_lora.ipynb) calls this script.
+
+Clips are read during training, one batch at a time. An earlier version
+precomputed every mel spectrogram with datasets.map. That still spawned a
+subprocess when num_proc was 1, and on Colab the child was killed once the
+feature cache got large, so training never started.
 
 Precision is picked automatically: bf16 on newer GPUs, fp16 on a T4,
 fp32 on CPU. Only the LoRA adapter (a few MB) is saved, not the full model.
@@ -18,39 +22,43 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
+from src.audio import load_mono
 from src.config import MANIFEST_DIR, settings
 from src.training.data_collator import DataCollatorSpeechSeq2SeqWithPadding
 from src.training.lora_config import build_lora_config
 
 
-def load_manifest(path: str | Path) -> list[dict]:
+def load_manifest(path: str | Path, limit: int | None = None) -> list[dict]:
     with open(path, encoding="utf-8") as f:
-        return [json.loads(line) for line in f]
+        records = [json.loads(line) for line in f]
+    return records[:limit] if limit is not None else records
 
 
-def build_dataset(records: list[dict], processor, num_proc: int = 1):
-    """Turn manifest records into model inputs: audio features and label token ids."""
-    from datasets import Dataset
+class ManifestSpeechDataset:
+    """One manifest row at a time: audio features plus label token ids.
 
-    ds = Dataset.from_list(
-        [{"audio_path": r["audio_path"], "transcript": r["transcript"]} for r in records]
-    )
+    A plain sequence (``__len__`` / ``__getitem__``) is enough for the
+    Trainer. Features are not written into an Arrow cache first.
+    """
 
-    def prepare(batch: dict) -> dict:
-        import soundfile as sf
+    def __init__(self, records: list[dict], processor):
+        self.records = records
+        self.processor = processor
 
-        audio, sr = sf.read(batch["audio_path"], dtype="float32")
-        if audio.ndim > 1:
-            audio = audio.mean(axis=1)
-        batch["input_features"] = processor.feature_extractor(
-            audio, sampling_rate=sr
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def __getitem__(self, index: int) -> dict:
+        rec = self.records[index]
+        audio = load_mono(rec["audio_path"])
+        features = self.processor.feature_extractor(
+            audio, sampling_rate=settings.sample_rate
         ).input_features[0]
-        batch["labels"] = processor.tokenizer(batch["transcript"]).input_ids
-        return batch
-
-    return ds.map(prepare, remove_columns=ds.column_names, num_proc=num_proc)
+        labels = self.processor.tokenizer(rec["transcript"]).input_ids
+        return {"input_features": features, "labels": labels}
 
 
 def select_precision() -> dict[str, bool]:
@@ -78,9 +86,12 @@ def train(args: argparse.Namespace) -> Path:
         args.model_id, language="english", task="transcribe"
     )
 
-    print("Preparing datasets...")
-    train_ds = build_dataset(load_manifest(args.train_manifest), processor, args.num_proc)
-    val_ds = build_dataset(load_manifest(args.val_manifest), processor, args.num_proc)
+    print("Preparing datasets (audio is loaded per batch, not cached up front)...")
+    train_ds = ManifestSpeechDataset(
+        load_manifest(args.train_manifest, args.limit), processor
+    )
+    val_limit = None if args.limit is None else max(1, args.limit // 4)
+    val_ds = ManifestSpeechDataset(load_manifest(args.val_manifest, val_limit), processor)
     print(f"train: {len(train_ds)} clips, val: {len(val_ds)} clips")
 
     model = WhisperForConditionalGeneration.from_pretrained(args.model_id)
@@ -94,6 +105,8 @@ def train(args: argparse.Namespace) -> Path:
 
     if args.gradient_checkpointing:
         model.gradient_checkpointing_enable()
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
 
         # The base model is frozen, so without this hook no gradient would
         # flow back through the encoder to reach the LoRA weights.
@@ -121,6 +134,7 @@ def train(args: argparse.Namespace) -> Path:
         eval_steps=args.eval_steps,
         save_steps=args.eval_steps,
         logging_steps=25,
+        save_total_limit=2,
         report_to=["none"],
         # Needed with PEFT: the wrapper hides the model's argument names,
         # so the trainer must not drop columns or guess the label name.
@@ -155,6 +169,12 @@ def main() -> None:
     parser.add_argument("--output-dir", default="checkpoints/whisper-turbo-singlish-lora")
     parser.add_argument("--epochs", type=float, default=3.0)
     parser.add_argument("--max-steps", type=int, default=0, help="overrides epochs when > 0")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="use only the first N train clips (and about N/4 val clips)",
+    )
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--grad-accum", type=int, default=2)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -164,8 +184,12 @@ def main() -> None:
     parser.add_argument("--lora-alpha", type=int, default=64)
     parser.add_argument("--no-gradient-checkpointing", dest="gradient_checkpointing",
                         action="store_false")
-    parser.add_argument("--num-proc", type=int, default=1, help="dataset map workers")
-    parser.add_argument("--dataloader-workers", type=int, default=2)
+    parser.add_argument(
+        "--dataloader-workers",
+        type=int,
+        default=0 if sys.platform == "win32" else 2,
+        help="DataLoader workers. Default 0 on Windows (spawn + processor pickling).",
+    )
     args = parser.parse_args()
     train(args)
 

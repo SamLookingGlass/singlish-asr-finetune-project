@@ -40,8 +40,5 @@ checkpoints/
 *.log
 .DS_Store
 
-# Others
-README.md
-README_copy.md
-notebooks/
+# Scratch copies
 singlish_asr_finetune.egg-info/

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 
-from src.config import settings
+from src.config import resolve_path, settings
 
 
 def transcribe_openai(
@@ -31,7 +31,7 @@ def transcribe_openai(
         last_err: Exception | None = None
         for attempt in range(max_retries):
             try:
-                with open(rec["audio_path"], "rb") as f:
+                with open(resolve_path(rec["audio_path"]), "rb") as f:
                     response = client.audio.transcriptions.create(model=model, file=f)
                 results.append({"id": rec["id"], "hypothesis": response.text})
                 break

@@ -11,7 +11,7 @@ The standard way people fine-tune speech models is running a generic script, tun
 
 **Note:** This is an educational and engineering project built on a public research dataset ([SASRBench-v1](https://huggingface.co/datasets/mjwong/SASRBench-v1), derived from Part 3 of the IMDA National Speech Corpus). It is designed to demonstrate end-to-end machine learning engineering, data processing workflows, and practical speech evaluation.
 
-Special thanks to [Ming Jie Wong (mjwong)](https://huggingface.co/mjwong) for curating and publishing the SASRBench-v1 dataset on Hugging Face, and for the open reference implementation in the [whisper-large-v3-turbo-singlish](https://huggingface.co/mjwong/whisper-large-v3-turbo-singlish) repository, which provided valuable inspiration for our LoRA adapter setup and audio feature extraction.
+Special thanks to [Ming Jie Wong (mjwong)](https://huggingface.co/mjwong) for curating and publishing the SASRBench-v1 dataset on Hugging Face, and for the open reference implementation in the [whisper-large-v3-turbo-singlish](https://huggingface.co/mjwong/whisper-large-v3-turbo-singlish) repository, which provided valuable inspiration for this LoRA adapter setup and audio feature extraction.
 
 ## Project Goals & Thought Process
 
